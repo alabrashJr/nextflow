@@ -37,6 +37,7 @@ import test.TestHelper
  */
 class BashWrapperBuilderTest extends Specification {
 
+    @Deprecated
     def 'test change to scratchDir' () {
 
         setup:
@@ -208,6 +209,7 @@ class BashWrapperBuilderTest extends Specification {
         folder?.deleteDir()
     }
 
+    @Deprecated
     def 'test bash wrapper with inputs and outputs' () {
 
         given:

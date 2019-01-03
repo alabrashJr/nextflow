@@ -603,9 +603,8 @@ class TaskProcessor {
      * @return The interpreter as defined in the she-bang declaration, for example {@code /usr/bin/env perl}
      */
     static String fetchInterpreter( String script ) {
-        assert script != null
 
-        if( script[0] == '#' && script[1] == '!') {
+        if( script && script[0] == '#' && script[1] == '!') {
             return script.readLines()[0].substring(2)
         }
 

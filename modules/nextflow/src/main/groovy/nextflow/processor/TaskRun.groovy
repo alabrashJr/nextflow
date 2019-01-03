@@ -515,7 +515,7 @@ class TaskRun implements Cloneable {
     static final public String CMD_EXIT = '.exitcode'
     static final public String CMD_START = '.command.begin'
     static final public String CMD_RUN = '.command.run'
-    static final public String CMD_STUB = '.command.stub'
+    @Deprecated static final public String CMD_STUB = '.command.stub'
     static final public String CMD_TRACE = '.command.trace'
 
 

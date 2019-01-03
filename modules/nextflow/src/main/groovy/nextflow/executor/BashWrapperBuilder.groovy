@@ -31,6 +31,7 @@ import nextflow.processor.TaskBean
 import nextflow.processor.TaskProcessor
 import nextflow.processor.TaskRun
 import nextflow.util.Escape
+import nextflow.util.MustacheEngine
 
 /**
  * Builder to create the BASH script which is used to
@@ -331,6 +332,7 @@ class BashWrapperBuilder {
 
     private Path wrapperFile
 
+    @Deprecated
     private Path stubFile
 
     BashWrapperBuilder( TaskRun task ) {
@@ -380,16 +382,114 @@ class BashWrapperBuilder {
         copyStrategy.resolveForeignFiles(inputFiles)
     }
 
-    /**
-     * Build up the BASH wrapper script file which will launch the user provided script
-     * @return The {@code Path} of the created wrapper script
-     */
-    Path build() {
-        assert workDir, "Missing 'workDir' property in BashWrapperBuilder object"
-        assert script, "Missing 'script' property in BashWrapperBuilder object"
+    @PackageScope String buildNew0() {
+        final template = this.class.getResourceAsStream('command-run.txt')
+        try {
+            return buildNew0(template.newReader())
+        }
+        finally {
+            template.close()
+        }
+    }
 
-        /* 
-         * initialise command files 
+    @PackageScope Map<String,String> makeBinding() {
+        /*
+         * initialise command files
+         */
+        scriptFile = workDir.resolve(TaskRun.CMD_SCRIPT)
+        inputFile = workDir.resolve(TaskRun.CMD_INFILE)
+        startedFile = workDir.resolve(TaskRun.CMD_START)
+        exitedFile = workDir.resolve(TaskRun.CMD_EXIT)
+        wrapperFile = workDir.resolve(TaskRun.CMD_RUN)
+
+        // set true when running with through a container engine
+        runWithContainer = containerEnabled && !containerNative
+
+        // whenever it has to change to the scratch directory
+        final changeDir = getScratchDirectoryCommand()
+
+        /*
+         * create the container launcher command if needed
+         */
+        containerBuilder = runWithContainer ? createContainerBuilder(changeDir) : null
+
+        /*
+         * fetch the script interpreter i.e. BASH, Perl, Python, etc
+         */
+        final interpreter = TaskProcessor.fetchInterpreter(script)
+
+        final binding = new HashMap<String,String>(20)
+        binding.header_script = headerScript
+        binding.task_name = name
+
+        if( runWithContainer ) {
+            binding.container_boxid = 'export NXF_BOXID="nxf-$(dd bs=18 count=1 if=/dev/urandom 2>/dev/null | base64 | tr +/ 0A)"'
+            binding.container_helpers = containerBuilder.getScriptHelpers()
+            binding.kill_cmd = containerBuilder.getKillCommand()
+        }
+        else {
+            binding.container_boxid = null
+            binding.container_helpers = null
+            binding.kill_cmd = '[[ "$pid" ]] && nxf_kill $pid'
+        }
+
+        binding.cleanup_cmd = getCleanupCmd(changeDir)
+        binding.scratch_cmd = ( changeDir ?: "NXF_SCRATCH=''" )
+
+        binding.before_script = copyStrategy.getBeforeStartScript()
+        binding.exit_file = exitFile(exitedFile)
+        binding.touch_file = touchFile(startedFile)
+
+        final customEnv = createCustomEnvironment()
+        binding.custom_env = customEnv ? "set +u\n${customEnv}set -u\n" : null
+
+        /*
+         * add the task environment
+         */
+        binding.task_env = createTaskEnvironment(environment) ?: null
+
+        /*
+         * staging input files when required
+         */
+        final stagingScript = copyStrategy.getStageInputFilesScript(resolvedInputs)
+        binding.stage_inputs = stagingScript ? "# stage input files\n${stagingScript}" : null
+
+        binding.stdout_file = TaskRun.CMD_OUTFILE
+        binding.stderr_file = TaskRun.CMD_ERRFILE
+        binding.trace_file = TaskRun.CMD_TRACE
+
+        binding.trace_cmd = getTraceCommand(interpreter)
+        binding.launch_cmd = getLaunchCommand(interpreter,binding.task_env)
+
+        String copyScript = null
+        if( changeDir ) {
+            copyScript = copyFileToWorkDir(TaskRun.CMD_OUTFILE) + ' || true' + ENDL
+            copyScript += copyFileToWorkDir(TaskRun.CMD_ERRFILE) + ' || true' + ENDL
+            if( statsEnabled )
+                copyScript += copyFileToWorkDir(TaskRun.CMD_TRACE) + ' || true' + ENDL
+        }
+        binding.unstage_controls = copyScript
+
+        if( changeDir || workDir != targetDir ) {
+            binding.unstage_outputs = copyStrategy.getUnstageOutputFilesScript(outputFiles,targetDir)
+        }
+        else {
+            binding.unstage_outputs = null
+        }
+
+        binding.after_script = afterScript ? "# user `afterScript\n$afterScript" : null
+        return binding
+    }
+
+    @PackageScope String buildNew0(BufferedReader template) {
+        final binding = makeBinding()
+        final engine = new MustacheEngine()
+        engine.render(template, binding)
+    }
+
+    @PackageScope Path buildLegacy0() {
+        /*
+         * initialise command files
          */
         scriptFile = workDir.resolve(TaskRun.CMD_SCRIPT)
         inputFile = workDir.resolve(TaskRun.CMD_INFILE)
@@ -397,7 +497,7 @@ class BashWrapperBuilder {
         exitedFile = workDir.resolve(TaskRun.CMD_EXIT)
         wrapperFile = workDir.resolve(TaskRun.CMD_RUN)
         stubFile = workDir.resolve(TaskRun.CMD_STUB)
-        
+
         // set true when running with through a container engine
         runWithContainer = containerEnabled && !containerNative
 
@@ -497,7 +597,7 @@ class BashWrapperBuilder {
         if( customEnv ) {
             // -- enable unbound variables
             wrapper << 'set +u' << ENDL
-            wrapper << customEnv 
+            wrapper << customEnv
             // -- disable unbound variables
             wrapper << 'set -u' << ENDL
         }
@@ -573,6 +673,27 @@ class BashWrapperBuilder {
         return wrapperFile
     }
 
+    /**
+     * Build up the BASH wrapper script file which will launch the user provided script
+     * @return The {@code Path} of the created wrapper script
+     */
+    Path build() {
+        assert workDir, "Missing 'workDir' property in BashWrapperBuilder object"
+        assert script, "Missing 'script' property in BashWrapperBuilder object"
+
+        if( !System.getenv('NXF_PREVIEW') ) {
+            buildLegacy0()
+        }
+        else {
+            final wrapper = buildNew0()
+            Files.write(wrapperFile, wrapper.getBytes())
+            Files.write(scriptFile, script.getBytes())
+            if( input != null )
+                Files.write(inputFile, input.toString().getBytes())
+            return wrapperFile
+        }
+    }
+
     protected String createCustomEnvironment() {
 
         def result = new StringBuilder()
@@ -618,6 +739,47 @@ class BashWrapperBuilder {
         return result
     }
 
+    protected String getTraceCommand(String interpreter) {
+        String result = "${interpreter} ${fileStr(scriptFile)}"
+        if( input != null )
+            result += pipeInputFile(inputFile)
+
+        return result
+    }
+
+    protected String getLaunchCommand(String interpreter, String env) {
+        /*
+        * process stats
+        */
+        String launcher
+        final traceWrapper = statsEnabled || fixOwnership()
+        if( traceWrapper ) {
+            // executes the stub which in turn executes the target command
+            launcher = "/bin/bash ${fileStr(wrapperFile)} nxf_trace"
+        }
+        else {
+            launcher = "${interpreter} ${fileStr(scriptFile)}"
+        }
+
+        /*
+         * create the container engine command when needed
+         */
+        if( containerBuilder && !this.containerExecutable ) {
+            def cmd = env ? 'eval $(nxf_taskenv); ' + launcher : launcher
+            launcher = containerBuilder.getRunCommand(cmd)
+        }
+
+        /*
+         * pipe the input file on the command standard input
+         */
+        if( !traceWrapper && input != null ) {
+            launcher += pipeInputFile(inputFile)
+        }
+
+        return launcher
+    }
+
+    @Deprecated
     protected String getLauncherScript(String interpreter, String env) {
 
         /*
@@ -669,6 +831,7 @@ class BashWrapperBuilder {
         isMacOS() && !isContainerEnabled()
     }
 
+    @Deprecated
     protected Path createStubScript(String interpreter) {
         final stub = new StringBuilder()
         newLine stub, '#!/bin/bash'
@@ -703,6 +866,28 @@ class BashWrapperBuilder {
         return stubFile
     }
 
+    String getCleanupCmd(String scratch) {
+        String result = ''
+        // -- cleanup the scratch dir
+        if( scratch && cleanup != false ) {
+            result += (!containerBuilder ? 'rm -rf $NXF_SCRATCH || true' : '(sudo -n true && sudo rm -rf "$NXF_SCRATCH" || rm -rf "$NXF_SCRATCH")&>/dev/null || true')
+            result += '\n'
+        }
+        // -- remove the container in this way because 'docker run --rm'  fail in some cases -- see https://groups.google.com/d/msg/docker-user/0Ayim0wv2Ls/-mZ-ymGwg8EJ
+        final remove = containerBuilder?.getRemoveCommand()
+        if( remove ) {
+            result += "${remove} &>/dev/null || true"
+            result += '\n'
+        }
+        return result
+    }
+
+    String getExitScriptLegacy(String scratch) {
+        def result = getCleanupCmd(scratch)
+        result += 'exit $exit_status'
+        result.readLines().join('\n  ')
+    }
+
     /**
      * Define the task clean-up snippet
      *
@@ -711,29 +896,17 @@ class BashWrapperBuilder {
      * @return The script string to be included the in main launcher script
      */
     @PackageScope
+    @Deprecated
     String scriptCleanUp( Path file, String scratch ) {
-
-        final script = []
 
         // -- the kill command
         final killCommand = containerBuilder?.getKillCommand() ?: '[[ "$pid" ]] && nxf_kill $pid'
-        // -- cleanup the scratch dir
-        if( scratch && cleanup != false ) {
-            script << (!containerBuilder ? 'rm -rf $NXF_SCRATCH || true' : '(sudo -n true && sudo rm -rf "$NXF_SCRATCH" || rm -rf "$NXF_SCRATCH")&>/dev/null || true')
-        }
-        // -- remove the container in this way because 'docker run --rm'  fail in some cases -- see https://groups.google.com/d/msg/docker-user/0Ayim0wv2Ls/-mZ-ymGwg8EJ
-        final remove = containerBuilder?.getRemoveCommand()
-        if( remove ) {
-            script << "${remove} &>/dev/null || true"
-        }
-        // -- return the exit code
-        script << 'exit $exit_status'
 
         // -- finally compose the script
         SCRIPT_CLEANUP
                 .replace('__EXIT_FILE__', exitFile(file))
                 .replace('__KILL_CMD__', killCommand)
-                .replace('__EXIT_CMD__', script.join('\n  '))
+                .replace('__EXIT_CMD__', getExitScriptLegacy(scratch))
     }
 
 
