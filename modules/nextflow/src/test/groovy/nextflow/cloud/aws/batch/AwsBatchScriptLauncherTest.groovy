@@ -16,6 +16,8 @@
 
 package nextflow.cloud.aws.batch
 
+import spock.lang.IgnoreIf
+
 import java.nio.file.Files
 
 import nextflow.processor.TaskBean
@@ -25,6 +27,7 @@ import spock.lang.Specification
  *
  * @author Paolo Di Tommaso <paolo.ditommaso@gmail.com>
  */
+@IgnoreIf({ System.getenv('NXF_PREVIEW')=='1' })
 class AwsBatchScriptLauncherTest extends Specification {
 
     def 'test bash wrapper with input'() {

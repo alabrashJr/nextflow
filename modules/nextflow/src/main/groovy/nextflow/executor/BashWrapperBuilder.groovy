@@ -32,7 +32,6 @@ import nextflow.processor.TaskProcessor
 import nextflow.processor.TaskRun
 import nextflow.util.Escape
 import nextflow.util.MustacheEngine
-
 /**
  * Builder to create the BASH script which is used to
  * wrap and launch the user task
@@ -383,7 +382,7 @@ class BashWrapperBuilder {
     }
 
     @PackageScope String buildNew0() {
-        final template = this.class.getResourceAsStream('command-run.txt')
+        final template = BashWrapperBuilder.class.getResourceAsStream('command-run.txt')
         try {
             return buildNew0(template.newReader())
         }

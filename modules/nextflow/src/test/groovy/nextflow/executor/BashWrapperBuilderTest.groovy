@@ -16,6 +16,8 @@
 
 package nextflow.executor
 
+import spock.lang.IgnoreIf
+
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.Paths
@@ -35,6 +37,7 @@ import test.TestHelper
  *
  * @author Paolo Di Tommaso <paolo.ditommaso@gmail.com>
  */
+@IgnoreIf({ System.getenv('NXF_PREVIEW')=='1' })
 class BashWrapperBuilderTest extends Specification {
 
     @Deprecated
