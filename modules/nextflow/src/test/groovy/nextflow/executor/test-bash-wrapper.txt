@@ -112,7 +112,7 @@ nxf_mem_watch() {
 
 nxf_write_trace() {
     echo "nextflow.trace/v2"           > $trace_file
-    echo "wall_time=$wall_time"        >> $trace_file
+    echo "realtime=$wall_time"         >> $trace_file
     echo "%cpu=$ucpu"                  >> $trace_file
     echo "rchar=${io_stat1[0]}"        >> $trace_file
     echo "wchar=${io_stat1[1]}"        >> $trace_file
