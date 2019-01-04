@@ -685,7 +685,7 @@ class BashWrapperBuilder {
         assert workDir, "Missing 'workDir' property in BashWrapperBuilder object"
         assert script, "Missing 'script' property in BashWrapperBuilder object"
 
-        if( !System.getenv('NXF_PREVIEW') ) {
+        if( System.getenv('NXF_PREVIEW')!='1' ) {
             buildLegacy0()
         }
         else {
