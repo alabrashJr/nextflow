@@ -80,7 +80,7 @@ class TaskBeanTest extends Specification {
         bean.environment == [alpha: 'one', beta:'xxx', gamma: 'yyy']
         bean.moduleNames ==  ['blast/1.1']
         bean.shell ==  ['bash', '-x']
-        bean.script == '#!/usr/bin/env bash -x\necho Ciao mondo\n'
+        bean.script == 'echo Ciao mondo'
         bean.beforeScript == 'before do this'
         bean.afterScript == 'after do that'
 

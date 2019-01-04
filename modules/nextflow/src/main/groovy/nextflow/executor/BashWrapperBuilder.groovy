@@ -413,6 +413,10 @@ class BashWrapperBuilder {
          */
         containerBuilder = runWithContainer ? createContainerBuilder(changeDir) : null
 
+        // ugly, it should be done somewhere else
+        if( script )
+            script = TaskProcessor.normalizeScript(script, shell)
+
         /*
          * fetch the script interpreter i.e. BASH, Perl, Python, etc
          */

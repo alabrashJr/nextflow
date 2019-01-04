@@ -119,7 +119,7 @@ class TaskBean implements Serializable, Cloneable {
         this.condaEnv = task.getCondaEnv()
         this.moduleNames = task.config.getModule()
         this.shell = task.config.getShell() ?: BashWrapperBuilder.BASH
-        this.script = TaskProcessor.normalizeScript(task.getScript(), shell)
+        this.script = task.getScript()
         this.beforeScript = task.config.beforeScript
         this.afterScript = task.config.afterScript
         this.cleanup = task.config.cleanup
